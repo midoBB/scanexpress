@@ -12,20 +12,31 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
+// UI states
+const (
+	stateListingScanners = iota
+	stateSelectingScanner
+	stateEnteringSaveFolder
+	stateDirectScan // New state for direct scanning
+)
+
 type model struct {
-	devices         []string
-	titles          []string
-	selectedDevice  string
-	selectedTitle   string
-	list            list.Model
-	listingScanners bool
-	spinner         spinner.Model
+	devices        []string
+	titles         []string
+	selectedDevice string
+	selectedTitle  string
+	saveFolder     string
+	state          int
+	list           list.Model
+	spinner        spinner.Model
+	folderInput    textinput.Model
 }
 
 type scanItem struct {
@@ -67,22 +78,37 @@ type ScannersListedMsg struct {
 }
 
 func main() {
-	// Initialize Viper (though not used fully in this step)
+	// Initialize Viper configuration
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath(path.Join(xdg.ConfigHome, "scanexpress"))
-	_ = viper.ReadInConfig() // Ignore error if config doesn't exist
+	configPath := path.Join(xdg.ConfigHome, "scanexpress")
+	viper.AddConfigPath(configPath)
+
+	// Create config directory if it doesn't exist
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		os.MkdirAll(configPath, 0755)
+	}
+
+	// Try to read config, ignore error if file doesn't exist
+	_ = viper.ReadInConfig()
 
 	// Setup spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
 
+	// Setup text input for save folder
+	ti := textinput.New()
+	ti.Placeholder = "Enter folder path to save scans"
+	ti.Focus()
+	ti.CharLimit = 256
+	ti.Width = 50
+
 	// Initialize model
 	m := model{
-		list:            list.New(make([]list.Item, 0), itemDelegate{}, 0, 0),
-		listingScanners: true,
-		spinner:         s,
+		list:        list.New(make([]list.Item, 0), itemDelegate{}, 0, 0),
+		spinner:     s,
+		folderInput: ti,
 	}
 	m.list.Title = "Select a Scanner"
 
@@ -90,13 +116,60 @@ func main() {
 	cmd := &cobra.Command{
 		Use:   "scan",
 		Short: "List and select scanners using scanimage",
-		Run: func(cmd *cobra.Command, args []string) {
-			p := tea.NewProgram(m)
-			if err := p.Start(); err != nil {
-				fmt.Println("Error:", err)
-				os.Exit(1)
+	}
+
+	// Add flags
+	var forceSelection bool
+	cmd.Flags().BoolVarP(&forceSelection, "select", "s", false, "Force scanner selection even if one is already configured")
+
+	// Run command
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Check if we have saved config values and should use them
+		savedDevice := viper.GetString("scanner.device")
+		savedTitle := viper.GetString("scanner.title")
+		savedFolder := viper.GetString("save.folder")
+
+		// If we have saved values, the folder exists, and we're not forcing selection
+		if !forceSelection && savedDevice != "" && savedTitle != "" && savedFolder != "" {
+			if _, err := os.Stat(savedFolder); !os.IsNotExist(err) {
+				// We have everything we need, skip UI and perform scan directly
+				fmt.Printf("Using saved scanner: %s\nSave folder: %s\n", savedTitle, savedFolder)
+				// Here you would directly perform the scan operation
+				return nil
+			} else {
+				// Folder doesn't exist, start from scanner selection
+				m.state = stateListingScanners
+				// But still use the saved folder as default
+				if savedFolder != "" {
+					m.folderInput.SetValue(savedFolder)
+				} else {
+					// Default to home directory if no saved folder
+					homeDir, err := os.UserHomeDir()
+					if err == nil {
+						m.folderInput.SetValue(homeDir)
+					}
+				}
 			}
-		},
+		} else {
+			// No saved config or forced selection, start from scanner listing
+			m.state = stateListingScanners
+			// Default to home directory for folder input
+			if savedFolder != "" {
+				m.folderInput.SetValue(savedFolder)
+			} else {
+				homeDir, err := os.UserHomeDir()
+				if err == nil {
+					m.folderInput.SetValue(homeDir)
+				}
+			}
+		}
+
+		p := tea.NewProgram(m)
+		if err := p.Start(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+		return nil
 	}
 
 	cmd.Execute()
@@ -110,7 +183,8 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.listingScanners {
+	switch m.state {
+	case stateListingScanners:
 		switch msg := msg.(type) {
 		case ScannersListedMsg:
 			m.devices = msg.devices
@@ -124,46 +198,96 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			m.list.SetItems(toListItems(m.devices, m.titles))
-			m.listingScanners = false
+			m.state = stateSelectingScanner
 			return m, nil
 		case spinner.TickMsg:
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
-	}
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyEnter {
-			if len(m.devices) > 0 {
-				selected, ok := m.list.SelectedItem().(scanItem)
-				if ok {
-					m.selectedDevice = selected.device
-					m.selectedTitle = selected.title
-					fmt.Printf("Selected scanner: %s\n", m.selectedTitle)
+	case stateSelectingScanner:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.Type == tea.KeyEnter {
+				if len(m.devices) > 0 {
+					selected, ok := m.list.SelectedItem().(scanItem)
+					if ok {
+						m.selectedDevice = selected.device
+						m.selectedTitle = selected.title
+						// Move to save folder input state
+						m.state = stateEnteringSaveFolder
+						return m, textinput.Blink
+					}
 				}
+			}
+		}
+
+		var cmd tea.Cmd
+		m.list, cmd = m.list.Update(msg)
+		return m, cmd
+
+	case stateEnteringSaveFolder:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.Type {
+			case tea.KeyEnter:
+				m.saveFolder = m.folderInput.Value()
+				// Validate folder path
+				if _, err := os.Stat(m.saveFolder); os.IsNotExist(err) {
+					// Create the directory if it doesn't exist
+					err := os.MkdirAll(m.saveFolder, 0755)
+					if err != nil {
+						fmt.Printf("Error creating directory: %v\n", err)
+						return m, tea.Quit
+					}
+				}
+
+				// Save to config
+				viper.Set("scanner.device", m.selectedDevice)
+				viper.Set("scanner.title", m.selectedTitle)
+				viper.Set("save.folder", m.saveFolder)
+
+				// Save config to file
+				configPath := path.Join(xdg.ConfigHome, "scanexpress", "config.yaml")
+				err := viper.WriteConfigAs(configPath)
+				if err != nil {
+					fmt.Printf("Error saving config: %v\n", err)
+				}
+
+				// Print final selection and save folder
+				fmt.Printf("Selected scanner: %s\nSave folder: %s\n", m.selectedTitle, m.saveFolder)
+				return m, tea.Quit
+			case tea.KeyCtrlC, tea.KeyEsc:
 				return m, tea.Quit
 			}
+
+			var cmd tea.Cmd
+			m.folderInput, cmd = m.folderInput.Update(msg)
+			return m, cmd
 		}
 	}
 
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 func (m model) View() string {
-	if m.listingScanners {
+	switch m.state {
+	case stateListingScanners:
 		return fmt.Sprintf("%s Looking for scanners...", m.spinner.View())
+
+	case stateSelectingScanner:
+		return m.list.View()
+
+	case stateEnteringSaveFolder:
+		return fmt.Sprintf(
+			"Selected Scanner: %s\n\nSave scans to:\n\n%s\n\n(Press Enter to confirm, edit path to change)",
+			m.selectedTitle,
+			m.folderInput.View(),
+		)
 	}
 
-	// Display an error message if no scanners were found
-	if len(m.devices) == 1 && m.devices[0] == "No scanners found" {
-		return "Error: No scanners found. Please connect a scanner and try again."
-	}
-
-	return m.list.View()
+	return ""
 }
 
 func listScannersCmd() tea.Msg {
