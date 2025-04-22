@@ -21,6 +21,8 @@ const (
 	StateListingScanners = iota
 	StateSelectingScanner
 	StateEnteringSaveFolder
+	StateEnteringPageCount
+	StateSelectingDuplexMode
 )
 
 // Model represents the UI state
@@ -30,10 +32,13 @@ type Model struct {
 	SelectedDevice string
 	SelectedTitle  string
 	SaveFolder     string
+	PageCount      int
+	IsDuplex       bool
 	State          int
 	List           list.Model
 	Spinner        spinner.Model
 	FolderInput    textinput.Model
+	PageCountInput textinput.Model
 
 	// Configuration manager
 	ConfigManager *config.ConfigManager
@@ -105,13 +110,23 @@ func NewModel(cm *config.ConfigManager) Model {
 	ti.CharLimit = 256
 	ti.Width = 50
 
+	// Setup text input for page count
+	pci := textinput.New()
+	pci.Placeholder = "Enter number of pages to scan"
+	pci.Focus()
+	pci.CharLimit = 3
+	pci.Width = 5
+
 	// Initialize model
 	m := Model{
-		List:          list.New(make([]list.Item, 0), ItemDelegate{}, 0, 0),
-		State:         StateListingScanners,
-		Spinner:       s,
-		FolderInput:   ti,
-		ConfigManager: cm,
+		List:           list.New(make([]list.Item, 0), ItemDelegate{}, 0, 0),
+		State:          StateListingScanners,
+		Spinner:        s,
+		FolderInput:    ti,
+		PageCountInput: pci,
+		ConfigManager:  cm,
+		PageCount:      1,     // Default to 1 page
+		IsDuplex:       false, // Default to single-sided
 	}
 	m.List.Title = "Select a Scanner"
 
@@ -126,6 +141,9 @@ func NewModel(cm *config.ConfigManager) Model {
 			m.FolderInput.SetValue(homeDir)
 		}
 	}
+
+	// Set default page count to "1"
+	m.PageCountInput.SetValue("1")
 
 	return m
 }
@@ -144,8 +162,17 @@ func ToListItems(scanners []scanner.Scanner) []list.Item {
 
 // Init is called when the model is initialized
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.Spinner.Tick,
-		ListScannersCmd(),
-	)
+	switch m.State {
+	case StateListingScanners:
+		return tea.Batch(
+			m.Spinner.Tick,
+			ListScannersCmd(),
+		)
+
+	case StateEnteringPageCount:
+		return textinput.Blink
+
+	default:
+		return nil
+	}
 }

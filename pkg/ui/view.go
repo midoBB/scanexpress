@@ -19,6 +19,25 @@ func (m Model) View() string {
 			m.SelectedTitle,
 			m.FolderInput.View(),
 		)
+
+	case StateEnteringPageCount:
+		return fmt.Sprintf(
+			"Selected Scanner: %s\n\nHow many pages to scan?\n\n%s\n\n(Press Enter to confirm)",
+			m.SelectedTitle,
+			m.PageCountInput.View(),
+		)
+
+	case StateSelectingDuplexMode:
+		duplex := "No"
+		if m.IsDuplex {
+			duplex = "Yes"
+		}
+		return fmt.Sprintf(
+			"Selected Scanner: %s\n\nNumber of pages: %d\n\nIs this a double-sided (recto-verso) document? %s\n\n(Press y/n to select, Enter to confirm)",
+			m.SelectedTitle,
+			m.PageCount,
+			duplex,
+		)
 	}
 
 	return ""

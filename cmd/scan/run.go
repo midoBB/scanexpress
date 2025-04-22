@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"scanexpress/pkg/config"
-	"scanexpress/pkg/scanner"
 	"scanexpress/pkg/ui"
 )
 
@@ -32,26 +31,23 @@ func Run() {
 
 	// Run command
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		// If we have a saved config and not forcing selection
+		// Create and initialize the UI model
+		model := ui.NewModel(cm)
+
+		// If we have a saved config and not forcing selection, set initial state to page count
 		if !forceSelection && cm.HasValidSavedConfig() {
 			config := cm.GetConfig()
 
-			// Skip UI and perform scan directly
+			// Pre-fill model with saved config
+			model.SelectedDevice = config.ScannerDevice
+			model.SelectedTitle = config.ScannerTitle
+			model.SaveFolder = config.SaveFolder
+
+			// Skip directly to page count state
+			model.State = ui.StateEnteringPageCount
+
 			fmt.Printf("Using saved scanner: %s\nSave folder: %s\n", config.ScannerTitle, config.SaveFolder)
-
-			// Perform the scan
-			result := scanner.PerformScan(config.ScannerDevice, config.SaveFolder)
-			if result.Success {
-				fmt.Printf("Scan completed successfully!\nSaved to: %s\n", result.FilePath)
-				return nil
-			} else {
-				fmt.Printf("Scanning failed: %v\n", result.Error)
-				return result.Error
-			}
 		}
-
-		// Create and initialize the UI model
-		model := ui.NewModel(cm)
 
 		// Start the UI program
 		p := tea.NewProgram(model)

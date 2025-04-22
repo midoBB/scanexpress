@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -104,15 +105,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fmt.Printf("Error saving config: %v\n", err)
 				}
 
-				// Perform scan
-				result := scanner.PerformScan(m.SelectedDevice, m.SaveFolder)
-				if result.Success {
-					fmt.Printf("Scan completed successfully!\nSaved to: %s\n", result.FilePath)
-				} else {
-					fmt.Printf("Scanning failed: %v\n", result.Error)
-				}
-
-				return m, tea.Quit
+				// Move to page count input
+				m.State = StateEnteringPageCount
+				return m, textinput.Blink
 
 			case tea.KeyCtrlC, tea.KeyEsc:
 				return m, tea.Quit
@@ -121,6 +116,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.FolderInput, cmd = m.FolderInput.Update(msg)
 			return m, cmd
+		}
+
+	case StateEnteringPageCount:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.Type {
+			case tea.KeyEnter:
+				// Convert input to integer
+				pageCount, err := strconv.Atoi(m.PageCountInput.Value())
+				if err != nil || pageCount < 1 {
+					// Default to 1 if invalid
+					pageCount = 1
+				}
+				m.PageCount = pageCount
+
+				// Move to duplex selection
+				m.State = StateSelectingDuplexMode
+				return m, nil
+
+			case tea.KeyCtrlC, tea.KeyEsc:
+				return m, tea.Quit
+			}
+
+			var cmd tea.Cmd
+			m.PageCountInput, cmd = m.PageCountInput.Update(msg)
+			return m, cmd
+		}
+
+	case StateSelectingDuplexMode:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "y", "Y":
+				m.IsDuplex = true
+				return m, nil
+
+			case "n", "N":
+				m.IsDuplex = false
+				return m, nil
+
+			case "enter":
+				// Perform scan with the collected parameters
+				scanConfig := scanner.ScanConfig{
+					Device:     m.SelectedDevice,
+					SaveFolder: m.SaveFolder,
+					PageCount:  m.PageCount,
+					IsDuplex:   m.IsDuplex,
+				}
+
+				result := scanner.PerformScan(scanConfig)
+				if result.Success {
+					fmt.Printf("Scan completed successfully!\nSaved to: %s\n", result.FilePath)
+				} else {
+					fmt.Printf("Scanning failed: %v\n", result.Error)
+				}
+
+				return m, tea.Quit
+
+			case "ctrl+c", "esc":
+				return m, tea.Quit
+			}
 		}
 	}
 
