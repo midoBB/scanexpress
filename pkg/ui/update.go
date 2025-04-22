@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,6 +22,16 @@ func ListScannersCmd() tea.Cmd {
 		return ScannersListedMsg{
 			Scanners: result.Scanners,
 			Error:    result.Error,
+		}
+	}
+}
+
+// ScanPageCmd returns a command that scans a single page
+func ScanPageCmd(device string, outputFile string, isDuplex bool, pageNum int) tea.Cmd {
+	return func() tea.Msg {
+		result := scanner.ScanPage(device, outputFile, isDuplex, pageNum)
+		return PageScannedMsg{
+			Result: result,
 		}
 	}
 }
@@ -157,24 +169,92 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "enter":
-				// Perform scan with the collected parameters
-				scanConfig := scanner.ScanConfig{
-					Device:     m.SelectedDevice,
-					SaveFolder: m.SaveFolder,
-					PageCount:  m.PageCount,
-					IsDuplex:   m.IsDuplex,
+				// Create timestamp for scan directory
+				timestamp := time.Now().Format("20060102_150405")
+				m.ScanOutputDir = filepath.Join(m.SaveFolder, "scan_"+timestamp)
+
+				// Create scan directory
+				err := os.MkdirAll(m.ScanOutputDir, 0755)
+				if err != nil {
+					fmt.Printf("Error creating directory: %v\n", err)
+					return m, tea.Quit
 				}
 
-				result := scanner.PerformScan(scanConfig)
-				if result.Success {
-					fmt.Printf("Scan completed successfully!\nSaved to: %s\n", result.FilePath)
-				} else {
-					fmt.Printf("Scanning failed: %v\n", result.Error)
-				}
+				// Initialize scanning state
+				m.CurrentPage = 1
+				m.ScannedFiles = []string{}
 
-				return m, tea.Quit
+				// Move to waiting for first page
+				m.State = StateWaitingForPageScan
+				return m, nil
 
 			case "ctrl+c", "esc":
+				return m, tea.Quit
+			}
+		}
+
+	case StateWaitingForPageScan:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.Type {
+			case tea.KeyEnter:
+				// Move to scanning state
+				m.State = StateScanningPage
+
+				// Create output file path
+				outputFile := filepath.Join(m.ScanOutputDir, fmt.Sprintf("page_%03d.tiff", m.CurrentPage))
+
+				// Start scan
+				return m, tea.Batch(
+					m.Spinner.Tick,
+					ScanPageCmd(m.SelectedDevice, outputFile, m.IsDuplex, m.CurrentPage),
+				)
+
+			case tea.KeyCtrlC, tea.KeyEsc:
+				return m, tea.Quit
+			}
+		}
+
+	case StateScanningPage:
+		switch msg := msg.(type) {
+		case spinner.TickMsg:
+			var cmd tea.Cmd
+			m.Spinner, cmd = m.Spinner.Update(msg)
+			return m, cmd
+
+		case PageScannedMsg:
+			if msg.Result.Success {
+				// Add to scanned files
+				m.ScannedFiles = append(m.ScannedFiles, msg.Result.FilePath)
+
+				// Check if we've scanned all pages
+				if m.CurrentPage >= m.PageCount {
+					// All done
+					m.State = StateScanComplete
+					return m, nil
+				}
+
+				// Move to next page
+				m.CurrentPage++
+				m.State = StateWaitingForPageScan
+				return m, nil
+			} else {
+				// Scan failed
+				m.ScanError = msg.Result.Error
+				m.State = StateScanComplete
+				return m, nil
+			}
+
+		case tea.KeyMsg:
+			if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEsc {
+				return m, tea.Quit
+			}
+		}
+
+	case StateScanComplete:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.Type == tea.KeyEnter || msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEsc {
 				return m, tea.Quit
 			}
 		}

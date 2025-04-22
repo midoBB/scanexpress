@@ -2,12 +2,13 @@ package scanner
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
-
-	// "path"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
-	// "time"
+	"time"
 )
 
 // Scanner represents a physical scanner device
@@ -18,9 +19,10 @@ type Scanner struct {
 
 // ScanResult represents the result of a scan operation
 type ScanResult struct {
-	Success  bool
-	Error    error
-	FilePath string
+	Success      bool
+	Error        error
+	OutputDir    string   // Directory containing the scanned files
+	ScannedFiles []string // List of scanned files
 }
 
 // ScanConfig holds configuration options for scanning
@@ -29,6 +31,14 @@ type ScanConfig struct {
 	SaveFolder string // Folder to save scanned files
 	PageCount  int    // Number of pages to scan
 	IsDuplex   bool   // Whether to scan both sides (duplex/recto-verso)
+}
+
+// PageScanResult holds the result of scanning a single page
+type PageScanResult struct {
+	Success  bool
+	Error    error
+	FilePath string
+	PageNum  int
 }
 
 // ListScannersResult holds the result of listing scanners
@@ -84,24 +94,94 @@ func ListScanners() ListScannersResult {
 	}
 }
 
-// PerformScan performs a scan using the given configuration
-func PerformScan(config ScanConfig) ScanResult {
-	// For demonstration purposes, just print what we're going to do
-	fmt.Printf("Would scan %d pages", config.PageCount)
-	if config.IsDuplex {
-		fmt.Printf(" in duplex mode (recto-verso)\n")
-	} else {
-		fmt.Printf(" in single-sided mode\n")
+// ScanPage scans a single page and saves it to the specified folder
+func ScanPage(device string, outputFile string, isDuplex bool, pageNum int) PageScanResult {
+	// Set the source based on duplex mode
+	source := "Automatic Document Feeder(left aligned)"
+	if isDuplex {
+		source = "Automatic Document Feeder(left aligned,Duplex)"
 	}
 
-	// For actual scanning, we would:
-	// 1. Create a timestamp for the filename
-	// timestamp := time.Now().Format("20060102_150405")
-	// 2. Create filenames based on page count - either multiple files or batch
-	// 3. Use scanimage with appropriate options including duplex if needed
+	// Set up the scanimage command with required options
+	cmd := exec.Command(
+		"scanimage",
+		"--device-name="+device,
+		"--format=png",
+		"--output-file="+outputFile,
+		"--resolution=600",
+		"--source="+source,
+		"--AutoDeskew=yes",
+		"--AutoDocumentSize=yes",
+	)
 
-	// For now, return a failure result as we're just implementing the UI part
+	// Run the command
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return PageScanResult{
+			Success:  false,
+			Error:    fmt.Errorf("scanning page %d failed: %v - %s", pageNum, err, string(output)),
+			PageNum:  pageNum,
+			FilePath: "",
+		}
+	}
+
+	return PageScanResult{
+		Success:  true,
+		PageNum:  pageNum,
+		FilePath: outputFile,
+	}
+}
+
+// PerformScan performs a scan using the given configuration
+func PerformScan(config ScanConfig) ScanResult {
+	// Create a timestamp for the folder name
+	timestamp := time.Now().Format("20060102_150405")
+	scanDir := path.Join(config.SaveFolder, "scan_"+timestamp)
+
+	// Create scan directory
+	err := os.MkdirAll(scanDir, 0755)
+	if err != nil {
+		return ScanResult{
+			Success:      false,
+			Error:        fmt.Errorf("failed to create scan directory: %v", err),
+			OutputDir:    "",
+			ScannedFiles: nil,
+		}
+	}
+
+	// Track scanned files
+	scannedFiles := make([]string, 0, config.PageCount)
+
+	// Scan each page
+	var scanErr error
+	for i := 1; i <= config.PageCount; i++ {
+		// Create output filename for this page
+		outputFile := filepath.Join(scanDir, fmt.Sprintf("page_%03d.tiff", i))
+
+		// Scan the page
+		result := ScanPage(config.Device, outputFile, config.IsDuplex, i)
+
+		if result.Success {
+			scannedFiles = append(scannedFiles, result.FilePath)
+		} else {
+			scanErr = result.Error
+			break
+		}
+	}
+
+	// Check if all pages were scanned successfully
+	if scanErr != nil {
+		return ScanResult{
+			Success:      false,
+			Error:        scanErr,
+			OutputDir:    scanDir,
+			ScannedFiles: scannedFiles,
+		}
+	}
+
 	return ScanResult{
-		Success: false,
+		Success:      true,
+		OutputDir:    scanDir,
+		ScannedFiles: scannedFiles,
 	}
 }

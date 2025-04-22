@@ -23,6 +23,9 @@ const (
 	StateEnteringSaveFolder
 	StateEnteringPageCount
 	StateSelectingDuplexMode
+	StateWaitingForPageScan
+	StateScanningPage
+	StateScanComplete
 )
 
 // Model represents the UI state
@@ -39,6 +42,12 @@ type Model struct {
 	Spinner        spinner.Model
 	FolderInput    textinput.Model
 	PageCountInput textinput.Model
+
+	// Scanning state
+	CurrentPage   int
+	ScannedFiles  []string
+	ScanOutputDir string
+	ScanError     error
 
 	// Configuration manager
 	ConfigManager *config.ConfigManager
@@ -96,6 +105,19 @@ type ScannersListedMsg struct {
 	Error    error
 }
 
+// PageScannedMsg is sent when a page has been scanned
+type PageScannedMsg struct {
+	Result scanner.PageScanResult
+}
+
+// ScanCompleteMsg is sent when scanning is complete
+type ScanCompleteMsg struct {
+	Success      bool
+	Error        error
+	OutputDir    string
+	ScannedFiles []string
+}
+
 // NewModel creates a new UI model
 func NewModel(cm *config.ConfigManager) Model {
 	// Setup spinner
@@ -127,6 +149,8 @@ func NewModel(cm *config.ConfigManager) Model {
 		ConfigManager:  cm,
 		PageCount:      1,     // Default to 1 page
 		IsDuplex:       false, // Default to single-sided
+		CurrentPage:    0,
+		ScannedFiles:   []string{},
 	}
 	m.List.Title = "Select a Scanner"
 
@@ -171,6 +195,9 @@ func (m Model) Init() tea.Cmd {
 
 	case StateEnteringPageCount:
 		return textinput.Blink
+
+	case StateScanningPage:
+		return m.Spinner.Tick
 
 	default:
 		return nil

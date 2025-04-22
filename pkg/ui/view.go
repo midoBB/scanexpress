@@ -38,6 +38,39 @@ func (m Model) View() string {
 			m.PageCount,
 			duplex,
 		)
+
+	case StateWaitingForPageScan:
+		return fmt.Sprintf(
+			"Ready to scan page %d of %d\n\nPlace the document in the scanner and press Enter when ready.",
+			m.CurrentPage,
+			m.PageCount,
+		)
+
+	case StateScanningPage:
+		return fmt.Sprintf(
+			"%s Scanning page %d of %d...",
+			m.Spinner.View(),
+			m.CurrentPage,
+			m.PageCount,
+		)
+
+	case StateScanComplete:
+		if m.ScanError != nil {
+			return fmt.Sprintf(
+				"Scanning failed at page %d of %d\nError: %v\n\nScanned %d pages successfully.\nFiles are located at: %s\n\nPress Enter to exit.",
+				m.CurrentPage,
+				m.PageCount,
+				m.ScanError,
+				len(m.ScannedFiles),
+				m.ScanOutputDir,
+			)
+		}
+
+		return fmt.Sprintf(
+			"Scan completed successfully!\nScanned %d pages.\n\nFiles are located at: %s\n\nPress Enter to exit.",
+			m.PageCount,
+			m.ScanOutputDir,
+		)
 	}
 
 	return ""
