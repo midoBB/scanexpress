@@ -225,7 +225,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case PageScannedMsg:
 			if msg.Result.Success {
 				// Add to scanned files
-				m.ScannedFiles = append(m.ScannedFiles, msg.Result.FilePath)
+				m.ScannedFiles = append(m.ScannedFiles, msg.Result.FilePaths...)
 
 				// Check if we've scanned all pages
 				if m.CurrentPage >= m.PageCount {

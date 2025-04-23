@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // Scanner represents a physical scanner device
@@ -33,12 +31,12 @@ type ScanConfig struct {
 	IsDuplex   bool   // Whether to scan both sides (duplex/recto-verso)
 }
 
-// PageScanResult holds the result of scanning a single page
+// PageScanResult holds the result of scanning a single page or duplex pages
 type PageScanResult struct {
-	Success  bool
-	Error    error
-	FilePath string
-	PageNum  int
+	Success   bool
+	Error     error
+	FilePaths []string // List of file paths for the scanned pages
+	PageNums  []int    // List of page numbers for the scanned pages
 }
 
 // ListScannersResult holds the result of listing scanners
@@ -102,86 +100,108 @@ func ScanPage(device string, outputFile string, isDuplex bool, pageNum int) Page
 		source = "Automatic Document Feeder(left aligned,Duplex)"
 	}
 
+	// Get the directory of the output file
+	outputDir := filepath.Dir(outputFile)
+
 	// Set up the scanimage command with required options
-	cmd := exec.Command(
-		"scanimage",
-		"--device-name="+device,
-		"--format=png",
-		"--output-file="+outputFile,
-		"--resolution=600",
-		"--source="+source,
-		"--AutoDeskew=yes",
-		"--AutoDocumentSize=yes",
-	)
+	var cmd *exec.Cmd
+
+	if isDuplex {
+		// For duplex scanning, we change to the output directory and use -b
+		// scanimage will generate out1.png and out2.png in the output directory
+		cmd = exec.Command(
+			"scanimage",
+			"--device-name="+device,
+			"--format=png",
+			"-b",
+			"--resolution=300", // Duplex scans are 300dpi
+			"--source="+source,
+			"--AutoDeskew=yes",
+			"--AutoDocumentSize=yes",
+		)
+		// Set the command's working directory to the output directory
+		cmd.Dir = outputDir
+	} else {
+		// For normal scanning, use --output-file option
+		cmd = exec.Command(
+			"scanimage",
+			"--device-name="+device,
+			"--format=png",
+			"--output-file="+outputFile,
+			"--resolution=600", // Non duplex scans are 600dpi
+			"--source="+source,
+			"--AutoDeskew=yes",
+			"--AutoDocumentSize=yes",
+		)
+	}
 
 	// Run the command
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return PageScanResult{
-			Success:  false,
-			Error:    fmt.Errorf("scanning page %d failed: %v - %s", pageNum, err, string(output)),
-			PageNum:  pageNum,
-			FilePath: "",
+			Success:   false,
+			Error:     fmt.Errorf("scanning page %d failed: %v - %s", pageNum, err, string(output)),
+			FilePaths: nil,
+			PageNums:  nil,
 		}
 	}
 
+	// For duplex scanning, verify output files were created
+	if isDuplex {
+		// Check for generated out1.png and out2.png files
+		// Note: For blank pages, some files might be missing, so we only need to find at least one
+		files, err := filepath.Glob(filepath.Join(outputDir, "out*.png"))
+		scannedFiles := make([]string, 0)
+		if err != nil || len(files) == 0 {
+			return PageScanResult{
+				Success:   false,
+				Error:     fmt.Errorf("duplex scan completed but no output files were found: %v", err),
+				FilePaths: nil,
+				PageNums:  nil,
+			}
+		}
+
+		for i, file := range files {
+			newFilename := filepath.Join(outputDir, fmt.Sprintf("page_%03d_%s.png",
+				pageNum,
+				getSideLabel(i)))
+
+			// Rename the file
+			err := os.Rename(file, newFilename)
+			if err != nil {
+				return PageScanResult{
+					Success:   false,
+					Error:     fmt.Errorf("failed to rename duplex scan file %s: %v", file, err),
+					FilePaths: nil,
+					PageNums:  nil,
+				}
+			}
+
+			// Add the renamed file to our list
+			scannedFiles = append(scannedFiles, newFilename)
+
+		}
+
+		// Success - we've verified output files exist
+		return PageScanResult{
+			Success:   true,
+			FilePaths: files,
+			PageNums:  []int{pageNum, pageNum + 1},
+		}
+	}
+
+	// For non-duplex scanning, just return the specified output file
 	return PageScanResult{
-		Success:  true,
-		PageNum:  pageNum,
-		FilePath: outputFile,
+		Success:   true,
+		FilePaths: []string{outputFile},
+		PageNums:  []int{pageNum},
 	}
 }
 
-// PerformScan performs a scan using the given configuration
-func PerformScan(config ScanConfig) ScanResult {
-	// Create a timestamp for the folder name
-	timestamp := time.Now().Format("20060102_150405")
-	scanDir := path.Join(config.SaveFolder, "scan_"+timestamp)
-
-	// Create scan directory
-	err := os.MkdirAll(scanDir, 0755)
-	if err != nil {
-		return ScanResult{
-			Success:      false,
-			Error:        fmt.Errorf("failed to create scan directory: %v", err),
-			OutputDir:    "",
-			ScannedFiles: nil,
-		}
+// getSideLabel returns a label for the side of a duplex scan (A for front, B for back)
+func getSideLabel(index int) string {
+	if index == 0 {
+		return "A" // Front side
 	}
-
-	// Track scanned files
-	scannedFiles := make([]string, 0, config.PageCount)
-
-	// Scan each page
-	var scanErr error
-	for i := 1; i <= config.PageCount; i++ {
-		// Create output filename for this page
-		outputFile := filepath.Join(scanDir, fmt.Sprintf("page_%03d.tiff", i))
-
-		// Scan the page
-		result := ScanPage(config.Device, outputFile, config.IsDuplex, i)
-
-		if result.Success {
-			scannedFiles = append(scannedFiles, result.FilePath)
-		} else {
-			scanErr = result.Error
-			break
-		}
-	}
-
-	// Check if all pages were scanned successfully
-	if scanErr != nil {
-		return ScanResult{
-			Success:      false,
-			Error:        scanErr,
-			OutputDir:    scanDir,
-			ScannedFiles: scannedFiles,
-		}
-	}
-
-	return ScanResult{
-		Success:      true,
-		OutputDir:    scanDir,
-		ScannedFiles: scannedFiles,
-	}
+	return "B" // Back side
 }

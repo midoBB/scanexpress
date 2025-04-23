@@ -1,0 +1,8 @@
+- [X] Finish testing the duplex scanning for multiple page scans
+- [ ] Convert the scans into a pdf
+- [ ] Better error reporting
+- [ ] Add a progress bar
+- [ ] Better input for page numbers
+- [ ] Better input for duplex/single page scans
+- [ ] Release on github
+- [ ] Add the option to customize the DPI and other scan parameters in the TUI or in the config file
