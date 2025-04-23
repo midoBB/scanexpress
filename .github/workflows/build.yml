@@ -1,0 +1,39 @@
+---
+name: Upload binaries
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-and-upload:
+    name: Build and upload
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm
+          - os: linux
+            arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Mise for handling tool versions
+        uses: jdx/mise-action@v2
+
+      - name: Build binary
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static" -s -w' -o scanexpress-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }} main.go
+
+      - name: Upload
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: scanexpress-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}
+          tag: ${{ github.ref }}
