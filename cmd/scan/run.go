@@ -3,6 +3,7 @@ package scan
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -10,6 +11,25 @@ import (
 	"scanexpress/pkg/config"
 	"scanexpress/pkg/ui"
 )
+
+// checkDependencies verifies that all required external programs are available on PATH
+func checkDependencies() error {
+	requiredPrograms := []string{"scanimage", "img2pdf"}
+	missingPrograms := []string{}
+
+	for _, program := range requiredPrograms {
+		_, err := exec.LookPath(program)
+		if err != nil {
+			missingPrograms = append(missingPrograms, program)
+		}
+	}
+
+	if len(missingPrograms) > 0 {
+		return fmt.Errorf("required programs not found: %v\nPlease install these programs and ensure they are in your PATH", missingPrograms)
+	}
+
+	return nil
+}
 
 func Run() {
 	// Setup configuration manager
@@ -31,6 +51,12 @@ func Run() {
 
 	// Run command
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Check for required dependencies first
+		if err := checkDependencies(); err != nil {
+			fmt.Println(err)
+			return err
+		}
+
 		// Create and initialize the UI model
 		model := ui.NewModel(cm)
 
