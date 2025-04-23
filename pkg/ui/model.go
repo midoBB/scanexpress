@@ -25,6 +25,7 @@ const (
 	StateSelectingDuplexMode
 	StateWaitingForPageScan
 	StateScanningPage
+	StateGeneratingPDF
 	StateScanComplete
 )
 
@@ -48,6 +49,9 @@ type Model struct {
 	ScannedFiles  []string
 	ScanOutputDir string
 	ScanError     error
+
+	// PDF state
+	GeneratedPDF string
 
 	// Configuration manager
 	ConfigManager *config.ConfigManager
@@ -116,6 +120,11 @@ type ScanCompleteMsg struct {
 	Error        error
 	OutputDir    string
 	ScannedFiles []string
+}
+
+// PDFGeneratedMsg is sent when a PDF has been generated
+type PDFGeneratedMsg struct {
+	Result scanner.PDFGenerationResult
 }
 
 // NewModel creates a new UI model

@@ -114,7 +114,7 @@ func ScanPage(device string, outputFile string, isDuplex bool, pageNum int) Page
 			"--device-name="+device,
 			"--format=png",
 			"-b",
-			"--resolution=300", // Duplex scans are 300dpi
+			"--resolution=300",
 			"--source="+source,
 			"--AutoDeskew=yes",
 			"--AutoDocumentSize=yes",
@@ -128,7 +128,7 @@ func ScanPage(device string, outputFile string, isDuplex bool, pageNum int) Page
 			"--device-name="+device,
 			"--format=png",
 			"--output-file="+outputFile,
-			"--resolution=600", // Non duplex scans are 600dpi
+			"--resolution=300",
 			"--source="+source,
 			"--AutoDeskew=yes",
 			"--AutoDocumentSize=yes",

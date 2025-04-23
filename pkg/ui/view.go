@@ -54,6 +54,13 @@ func (m Model) View() string {
 			m.PageCount,
 		)
 
+	case StateGeneratingPDF:
+		return fmt.Sprintf(
+			"%s Creating PDF document from %d scanned pages...",
+			m.Spinner.View(),
+			len(m.ScannedFiles),
+		)
+
 	case StateScanComplete:
 		if m.ScanError != nil {
 			return fmt.Sprintf(
@@ -66,10 +73,15 @@ func (m Model) View() string {
 			)
 		}
 
+		pdfMessage := ""
+		if m.GeneratedPDF != "" {
+			pdfMessage = fmt.Sprintf("\n\nA PDF document was created at: %s", m.GeneratedPDF)
+		}
+
 		return fmt.Sprintf(
-			"Scan completed successfully!\nScanned %d pages.\n\nFiles are located at: %s\n\nPress Enter to exit.",
+			"Scan completed successfully!\nScanned %d pages.%s\n\nPress Enter to exit.",
 			m.PageCount,
-			m.ScanOutputDir,
+			pdfMessage,
 		)
 	}
 

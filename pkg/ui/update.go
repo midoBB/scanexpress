@@ -36,6 +36,16 @@ func ScanPageCmd(device string, outputFile string, isDuplex bool, pageNum int) t
 	}
 }
 
+// GeneratePDFCmd returns a command that generates a PDF from scanned images
+func GeneratePDFCmd(imageDir string) tea.Cmd {
+	return func() tea.Msg {
+		result := scanner.GeneratePDF(imageDir)
+		return PDFGeneratedMsg{
+			Result: result,
+		}
+	}
+}
+
 // Update handles state changes for the UI model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.State {
@@ -202,7 +212,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.State = StateScanningPage
 
 				// Create output file path
-				outputFile := filepath.Join(m.ScanOutputDir, fmt.Sprintf("page_%03d.tiff", m.CurrentPage))
+				outputFile := filepath.Join(m.ScanOutputDir, fmt.Sprintf("page_%03d.png", m.CurrentPage))
 
 				// Start scan
 				return m, tea.Batch(
@@ -229,9 +239,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Check if we've scanned all pages
 				if m.CurrentPage >= m.PageCount {
-					// All done
-					m.State = StateScanComplete
-					return m, nil
+					// Move to PDF generation
+					m.State = StateGeneratingPDF
+					return m, tea.Batch(
+						m.Spinner.Tick,
+						GeneratePDFCmd(m.ScanOutputDir),
+					)
 				}
 
 				// Move to next page
@@ -244,6 +257,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.State = StateScanComplete
 				return m, nil
 			}
+
+		case tea.KeyMsg:
+			if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEsc {
+				return m, tea.Quit
+			}
+		}
+
+	case StateGeneratingPDF:
+		switch msg := msg.(type) {
+		case spinner.TickMsg:
+			var cmd tea.Cmd
+			m.Spinner, cmd = m.Spinner.Update(msg)
+			return m, cmd
+
+		case PDFGeneratedMsg:
+			if msg.Result.Success {
+				m.GeneratedPDF = msg.Result.OutputPDF
+			} else {
+				m.ScanError = msg.Result.Error
+			}
+			// Move to completion state
+			m.State = StateScanComplete
+			return m, nil
 
 		case tea.KeyMsg:
 			if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEsc {
