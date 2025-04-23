@@ -159,6 +159,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case tea.KeyCtrlC, tea.KeyEsc:
 				return m, tea.Quit
+
+			case tea.KeyUp, tea.KeyLeft:
+				// Increase page count
+				currentValue := m.PageCountInput.Value()
+				pageCount, err := strconv.Atoi(currentValue)
+				if err != nil || pageCount < 1 {
+					pageCount = 0
+				}
+				m.PageCountInput.SetValue(strconv.Itoa(pageCount + 1))
+				return m, nil
+
+			case tea.KeyDown, tea.KeyRight:
+				// Decrease page count
+				currentValue := m.PageCountInput.Value()
+				pageCount, err := strconv.Atoi(currentValue)
+				if err != nil || pageCount <= 1 {
+					pageCount = 2
+				}
+				m.PageCountInput.SetValue(strconv.Itoa(pageCount - 1))
+				return m, nil
+			}
+
+			// Handle additional keyboard shortcuts
+			switch msg.String() {
+			case "k", "p":
+				// Increase page count
+				currentValue := m.PageCountInput.Value()
+				pageCount, err := strconv.Atoi(currentValue)
+				if err != nil || pageCount < 1 {
+					pageCount = 0
+				}
+				m.PageCountInput.SetValue(strconv.Itoa(pageCount + 1))
+				return m, nil
+
+			case "j", "n":
+				// Decrease page count
+				currentValue := m.PageCountInput.Value()
+				pageCount, err := strconv.Atoi(currentValue)
+				if err != nil || pageCount <= 1 {
+					pageCount = 2
+				}
+				m.PageCountInput.SetValue(strconv.Itoa(pageCount - 1))
+				return m, nil
 			}
 
 			var cmd tea.Cmd
