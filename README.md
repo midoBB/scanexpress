@@ -16,6 +16,10 @@ ScanExpress is a command-line application that provides a convenient way to cont
 - Automatic PDF generation from scanned images
 - Auto-deskew and auto document size detection
 
+## Demo
+
+![Demo](./docs/scanexpress.mp4)
+
 ## Requirements
 
 - `scanimage` (SANE backend) for scanner access
@@ -25,10 +29,16 @@ ScanExpress is a command-line application that provides a convenient way to cont
 
 ### From Source
 
+Build and install the application to `$HOME/.local/bin` (default) or a custom path:
+
 ```bash
 git clone https://github.com/midoBB/scanexpress.git
 cd scanexpress
-go build
+make build
+# Install to default location
+make install
+# Install to a custom location
+make install INSTALL_PATH=/path/to/install
 ```
 
 ### From Binary

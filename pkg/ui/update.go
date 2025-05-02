@@ -4,15 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"scanexpress/pkg/config"
+	"scanexpress/pkg/scanner"
 	"strconv"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"scanexpress/pkg/config"
-	"scanexpress/pkg/scanner"
 )
 
 // ListScannersCmd returns a command that lists available scanners
@@ -331,12 +330,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case StateScanComplete:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			if msg.Type == tea.KeyEnter || msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEsc {
-				return m, tea.Quit
-			}
-		}
+		return m, tea.Quit
 	}
 
 	return m, nil
