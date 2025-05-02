@@ -18,7 +18,11 @@ ScanExpress is a command-line application that provides a convenient way to cont
 
 ## Demo
 
-![Demo](./docs/scanexpress.mp4)
+
+
+https://github.com/user-attachments/assets/1fa8c911-374f-431b-b151-b9ecba2f8b88
+
+
 
 ## Requirements
 
